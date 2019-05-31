@@ -4,18 +4,12 @@ import time
 from IPython.core import magic_arguments
 from IPython.core.magics import ExecutionMagics
 from IPython.core.magic import cell_magic, magics_class
+import slackweb
 
-
-def notify_self(message):
-    slack_token = os.environ["SLACK_TOKEN"]
-    slack_id = os.environ["SLACK_ID"]
-    parameters = {
-        "token": slack_token,
-        "channel": "@" + slack_id,
-        "text": message
-    }
-    r = requests.post("https://slack.com/api/chat.postMessage", params=parameters)
-    return r.text
+def notify_self(attachments):
+    url=os.environ["SLACK_URL"]
+    slack = slackweb.Slack(url)
+    slack.notify(attachments=attachments)
 
 
 def construct_time_mess(elapsed):
@@ -33,7 +27,7 @@ def construct_time_mess(elapsed):
         time_mess += " {} hours ".format(hour)
     if minutes > 0:
         time_mess += " {} minutes".format(minutes)
-    if seconds > 0:
+    if seconds >= 0:
         time_mess += " {} seconds".format(seconds)
     return time_mess
 
@@ -51,14 +45,24 @@ class MessengerMagics(ExecutionMagics):
     def notify(self, line="", cell=None):
         args = magic_arguments.parse_argstring(self.notify, line)
         mess = args.message.replace("\"", "")
+        detail={}
+        attachment = {}
         start = time.time()
         try:
             self.shell.ex(cell)
-            if args.time:
-                elapsed = time.time() - start
-                time_mess = construct_time_mess(elapsed)
-                mess += " in" + time_mess
-            notify_self("Finished {}".format(mess))
+            status=0
+            {"title": "Sushi",
+                "pretext": "Sushi _includes_ gunkanmaki",
+                "text": "Eating *right now!*",
+                "mrkdwn_in": ["text", "pretext"]}
+            detail['status'] = 'Success'
         except BaseException as e:
-            notify_self("Error while {}:\n```\n{!r}\n```".format(mess, e))
+            detail['status'] = 'Fail'
+            detail['error'] = "{!r}".format(e)
             raise e
+        finally:
+            detail['runtime'] = construct_time_mess(time.time()-start)
+            attachment['pretext'] = "'{}'".format(mess) + ' was done !' 
+            attachment['title'] = "'{}'".format(mess) + ' was {} !'.format(detail['status'])
+            attachment['text'] = '\n'.join(['{}:{}'.format(key, content) for key, content in detail.items()]) 
+            notify_self([attachment])
